@@ -37,21 +37,42 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', auth, authorize('admin'), async (req, res) => {
   try {
-    const { ma_voucher, loai_giam, gia_tri, don_toi_thieu, ngay_het_han } = req.body;
+    const {
+      ma_voucher,
+      loai_giam,
+      gia_tri,
+      don_toi_thieu,
+      ngay_het_han,
+      code,
+      type,
+      value,
+      expiryDate,
+      minOrderValue,
+      maxUses
+    } = req.body;
+
+    const couponCode = (ma_voucher || code || '').trim();
+    const discountType = (loai_giam || type || 'PhanTram').toString();
+    const discountValue = Number(gia_tri ?? value);
+    const minimumOrderValue = Number(don_toi_thieu ?? minOrderValue ?? 0);
+    const expiresAt = ngay_het_han || expiryDate;
+    const allowedUses = Number(maxUses ?? 1);
 
     // Validation
-    if (!ma_voucher || !loai_giam || !gia_tri || !ngay_het_han) {
+    if (!couponCode || !discountType || Number.isNaN(discountValue) || !expiresAt) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
     // Map from frontend naming to DB naming
     const coupon = new Coupon({
-      code: ma_voucher,
-      discountType: loai_giam === 'PhanTram' ? 'percent' : 'fixed',
-      discountValue: gia_tri,
-      minOrderValue: don_toi_thieu || 0,
-      expiresAt: new Date(ngay_het_han),
-      isActive: true
+      code: couponCode,
+      discountType: ['PhanTram', 'percentage', 'percent'].includes(discountType) ? 'percent' : 'fixed',
+      discountValue,
+      minOrderValue: minimumOrderValue,
+      maxUses: allowedUses > 0 ? allowedUses : 1,
+      expiresAt: new Date(expiresAt),
+      isActive: true,
+      validFrom: new Date()
     });
 
     await coupon.save();
@@ -67,14 +88,27 @@ router.post('/', auth, authorize('admin'), async (req, res) => {
  */
 router.put('/:id', auth, authorize('admin'), async (req, res) => {
   try {
-    const { ma_voucher, loai_giam, gia_tri, don_toi_thieu, ngay_het_han } = req.body;
+    const {
+      ma_voucher,
+      loai_giam,
+      gia_tri,
+      don_toi_thieu,
+      ngay_het_han,
+      code,
+      type,
+      value,
+      expiryDate,
+      minOrderValue,
+      maxUses
+    } = req.body;
 
     const updateData = {};
-    if (ma_voucher) updateData.code = ma_voucher;
-    if (loai_giam) updateData.discountType = loai_giam === 'PhanTram' ? 'percent' : 'fixed';
-    if (gia_tri) updateData.discountValue = gia_tri;
-    if (don_toi_thieu !== undefined) updateData.minOrderValue = don_toi_thieu;
-    if (ngay_het_han) updateData.expiresAt = new Date(ngay_het_han);
+    if (ma_voucher || code) updateData.code = (ma_voucher || code).trim();
+    if (loai_giam || type) updateData.discountType = ['PhanTram', 'percentage', 'percent'].includes((loai_giam || type).toString()) ? 'percent' : 'fixed';
+    if (gia_tri !== undefined || value !== undefined) updateData.discountValue = Number(gia_tri ?? value);
+    if (don_toi_thieu !== undefined || minOrderValue !== undefined) updateData.minOrderValue = Number(don_toi_thieu ?? minOrderValue ?? 0);
+    if (maxUses !== undefined) updateData.maxUses = Number(maxUses);
+    if (ngay_het_han || expiryDate) updateData.expiresAt = new Date(ngay_het_han || expiryDate);
 
     const coupon = await Coupon.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!coupon) return res.status(404).json({ success: false, message: 'Coupon not found' });
