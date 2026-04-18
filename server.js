@@ -12,8 +12,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use(helmet());
 }
 
-// CORS: Strict in production, permissive for configured local origins in development
-const localOrigins = ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5176'];
+// CORS: Strict in production, configurable in development via env
 const configuredOrigins = [
   ...(process.env.FRONTEND_URLS || '').split(',').map((x) => x.trim()).filter(Boolean),
   process.env.FRONTEND_URL
@@ -21,12 +20,19 @@ const configuredOrigins = [
 
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? configuredOrigins
-  : [...new Set([...localOrigins, ...configuredOrigins])];
+  : [...new Set(configuredOrigins)];
+
+const isDevAllowAllOrigins = process.env.NODE_ENV !== 'production' && process.env.CORS_DEV_ALLOW_ALL === 'true';
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, server-to-server, health checks)
     if (!origin) {
+      return callback(null, true);
+    }
+
+    // In local development, optionally allow all browser origins via env switch
+    if (isDevAllowAllOrigins) {
       return callback(null, true);
     }
 
