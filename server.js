@@ -18,9 +18,16 @@ const configuredOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
+const devDefaultOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+];
+
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? configuredOrigins
-  : [...new Set(configuredOrigins)];
+  : [...new Set([...configuredOrigins, ...devDefaultOrigins])];
 
 const isDevAllowAllOrigins = process.env.NODE_ENV !== 'production' && process.env.CORS_DEV_ALLOW_ALL === 'true';
 
@@ -119,16 +126,16 @@ app.use(notFound);
 // Error handler (phải đặt cuối cùng)
 app.use(errorHandler);
 
-// Lấy link từ file .env và kết nối MongoDB
-const uri = process.env.MONGODB_URI;
+// Lấy link MongoDB từ env (hỗ trợ nhiều tên biến khi deploy như Render)
+const uri = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL;
 if (!uri) {
-  console.error('❌ MONGODB_URI chưa được cấu hình trong .env');
-  process.exit(1);
+  console.error('❌ Thiếu biến MongoDB. Hãy cấu hình MONGODB_URI (hoặc MONGO_URI / DATABASE_URL) trong Environment Variables.');
+  console.warn('⚠️ Server vẫn khởi động nhưng các API cần database sẽ không hoạt động.');
+} else {
+  mongoose.connect(uri)
+      .then(() => console.log("🎉 TUYỆT VỜI! Đã kết nối MongoDB Atlas thành công!"))
+      .catch(err => console.error("❌ Lỗi kết nối MongoDB:", err));
 }
-
-mongoose.connect(uri)
-    .then(() => console.log("🎉 TUYỆT VỜI! Đã kết nối MongoDB Atlas thành công!"))
-    .catch(err => console.error("❌ Lỗi kết nối MongoDB:", err));
 
 // Tạo một đường dẫn để test thử
 app.get('/', (req, res) => {
