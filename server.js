@@ -117,6 +117,11 @@ app.use('/api/users', userRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/comments', commentRoutes);
 
+// Route gốc để kiểm tra backend đang chạy
+app.get('/', (req, res) => {
+  res.send('Xin chào! Backend Đặt Đồ Ăn đang hoạt động nha!');
+});
+
 // Error handling middlewares
 const { errorHandler, notFound } = require('./middlewares/XuLyLoi');
 
@@ -136,11 +141,6 @@ if (!uri) {
       .then(() => console.log("🎉 TUYỆT VỜI! Đã kết nối MongoDB Atlas thành công!"))
       .catch(err => console.error("❌ Lỗi kết nối MongoDB:", err));
 }
-
-// Tạo một đường dẫn để test thử
-app.get('/', (req, res) => {
-    res.send('Xin chào! Backend Đặt Đồ Ăn đang hoạt động nha!');
-});
 
 // Bật server chạy ở cổng 3000
 const PORT = process.env.PORT || 3000;
