@@ -30,6 +30,37 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   : [...new Set([...configuredOrigins, ...devDefaultOrigins])];
 
 const isDevAllowAllOrigins = process.env.NODE_ENV !== 'production' && process.env.CORS_DEV_ALLOW_ALL === 'true';
+const allowVercelPreviewOrigins = process.env.CORS_ALLOW_VERCEL_PREVIEWS !== 'false';
+const vercelProjectName = (process.env.VERCEL_PROJECT_NAME || '').trim().toLowerCase();
+
+const isAllowedOrigin = (origin) => {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  if (!allowVercelPreviewOrigins) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+
+    if (parsed.protocol !== 'https:' || !host.endsWith('.vercel.app')) {
+      return false;
+    }
+
+    // If project name is set, only allow that project's production + preview domains.
+    if (vercelProjectName) {
+      return host === `${vercelProjectName}.vercel.app` || host.startsWith(`${vercelProjectName}-`);
+    }
+
+    // Fallback: allow Vercel domains when no project name is configured.
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -43,7 +74,7 @@ app.use(cors({
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 
