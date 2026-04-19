@@ -7,84 +7,17 @@ require('dotenv').config();
 
 const app = express();
 
+// CORS: Mở toàn bộ origin theo yêu cầu
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 // Helmet: Đặt các HTTP headers cho security (disabled for development)
 if (process.env.NODE_ENV === 'production') {
   app.use(helmet());
 }
-
-// CORS: Strict in production, configurable in development via env
-const configuredOrigins = [
-  ...(process.env.FRONTEND_URLS || '').split(',').map((x) => x.trim()).filter(Boolean),
-  process.env.FRONTEND_URL
-].filter(Boolean);
-
-const devDefaultOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:3000',
-  'http://127.0.0.1:3000'
-];
-
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? configuredOrigins
-  : [...new Set([...configuredOrigins, ...devDefaultOrigins])];
-
-const isDevAllowAllOrigins = process.env.NODE_ENV !== 'production' && process.env.CORS_DEV_ALLOW_ALL === 'true';
-const allowVercelPreviewOrigins = process.env.CORS_ALLOW_VERCEL_PREVIEWS !== 'false';
-const vercelProjectName = (process.env.VERCEL_PROJECT_NAME || '').trim().toLowerCase();
-
-const isAllowedOrigin = (origin) => {
-  if (allowedOrigins.includes(origin)) {
-    return true;
-  }
-
-  if (!allowVercelPreviewOrigins) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(origin);
-    const host = parsed.hostname.toLowerCase();
-
-    if (parsed.protocol !== 'https:' || !host.endsWith('.vercel.app')) {
-      return false;
-    }
-
-    // If project name is set, only allow that project's production + preview domains.
-    if (vercelProjectName) {
-      return host === `${vercelProjectName}.vercel.app` || host.startsWith(`${vercelProjectName}-`);
-    }
-
-    // Fallback: allow Vercel domains when no project name is configured.
-    return true;
-  } catch (error) {
-    return false;
-  }
-};
-
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (curl, server-to-server, health checks)
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // In local development, optionally allow all browser origins via env switch
-    if (isDevAllowAllOrigins) {
-      return callback(null, true);
-    }
-
-    if (isAllowedOrigin(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
-  },
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 // Rate Limiting: Tránh brute force attacks (DISABLED FOR DEVELOPMENT)
 // const limiter = rateLimit({
