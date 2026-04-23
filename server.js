@@ -8,11 +8,14 @@ require('dotenv').config();
 const app = express();
 
 // CORS: Mở toàn bộ origin theo yêu cầu
-app.use(cors({
+const corsOptions = {
   origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Helmet: Đặt các HTTP headers cho security (disabled for development)
 if (process.env.NODE_ENV === 'production') {
