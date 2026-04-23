@@ -15,7 +15,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 
 // Helmet: Đặt các HTTP headers cho security (disabled for development)
 if (process.env.NODE_ENV === 'production') {
