@@ -47,7 +47,7 @@ router.get('/available', auth, async (req, res) => {
           return false;
         }
 
-        if (orderValue > 0 && orderValue < Number(coupon.minOrderValue || 0)) {
+        if (orderValue < Number(coupon.minOrderValue || 0)) {
           return false;
         }
 
@@ -145,6 +145,13 @@ router.post('/', auth, authorize('admin'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
+    if (Number.isNaN(minimumOrderValue) || minimumOrderValue <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Đơn tối thiểu phải lớn hơn 0 để tránh áp dụng cho mọi đơn hàng.'
+      });
+    }
+
     // Map from frontend naming to DB naming
     const coupon = new Coupon({
       code: couponCode,
@@ -188,7 +195,16 @@ router.put('/:id', auth, authorize('admin'), async (req, res) => {
     if (ma_voucher || code) updateData.code = (ma_voucher || code).trim();
     if (loai_giam || type) updateData.discountType = ['PhanTram', 'percentage', 'percent'].includes((loai_giam || type).toString()) ? 'percent' : 'fixed';
     if (gia_tri !== undefined || value !== undefined) updateData.discountValue = Number(gia_tri ?? value);
-    if (don_toi_thieu !== undefined || minOrderValue !== undefined) updateData.minOrderValue = Number(don_toi_thieu ?? minOrderValue ?? 0);
+    if (don_toi_thieu !== undefined || minOrderValue !== undefined) {
+      const normalizedMinOrderValue = Number(don_toi_thieu ?? minOrderValue ?? 0);
+      if (Number.isNaN(normalizedMinOrderValue) || normalizedMinOrderValue <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Đơn tối thiểu phải lớn hơn 0 để tránh áp dụng cho mọi đơn hàng.'
+        });
+      }
+      updateData.minOrderValue = normalizedMinOrderValue;
+    }
     if (maxUses !== undefined) updateData.maxUses = Number(maxUses);
     if (ngay_het_han || expiryDate) updateData.expiresAt = new Date(ngay_het_han || expiryDate);
 
