@@ -138,8 +138,9 @@ exports.validateCoupon = async ({ code, userId, orderValue }) => {
     ? coupon.usedBy.filter((entry) => String(entry.userId) === String(userId)).length
     : 0;
 
-  if (userUsedCount >= Number(coupon.maxUsesPerUser || 1)) {
-    throw new Error('Bạn đã dùng hết lượt cho mã khuyến mãi này');
+  // Force one-time use per user for each coupon
+  if (userUsedCount >= 1) {
+    throw new Error('Mỗi mã khuyến mãi chỉ dùng được 1 lần cho mỗi tài khoản');
   }
 
   let discountAmount = 0;

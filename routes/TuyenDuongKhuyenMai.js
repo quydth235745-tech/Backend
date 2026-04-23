@@ -19,6 +19,57 @@ router.get('/', auth, authorize('admin'), async (req, res) => {
 });
 
 /**
+ * GET /api/coupons/available
+ * Get available coupons for current user
+ */
+router.get('/available', auth, async (req, res) => {
+  try {
+    const now = new Date();
+    const orderValue = Number(req.query.orderValue || 0);
+
+    const coupons = await Coupon.find({
+      isActive: true,
+      validFrom: { $lte: now },
+      expiresAt: { $gte: now }
+    }).sort({ expiresAt: 1 });
+
+    const availableCoupons = coupons
+      .filter((coupon) => {
+        if (coupon.usedCount >= coupon.maxUses) {
+          return false;
+        }
+
+        const hasUsedByCurrentUser = Array.isArray(coupon.usedBy)
+          ? coupon.usedBy.some((entry) => String(entry.userId) === String(req.user._id))
+          : false;
+
+        if (hasUsedByCurrentUser) {
+          return false;
+        }
+
+        if (orderValue > 0 && orderValue < Number(coupon.minOrderValue || 0)) {
+          return false;
+        }
+
+        return true;
+      })
+      .map((coupon) => ({
+        _id: coupon._id,
+        code: coupon.code,
+        description: coupon.description || '',
+        discountType: coupon.discountType,
+        discountValue: coupon.discountValue,
+        minOrderValue: coupon.minOrderValue,
+        expiresAt: coupon.expiresAt
+      }));
+
+    res.json({ success: true, data: availableCoupons });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * POST /api/coupons/validate
  * Validate coupon for current user and order value
  */
