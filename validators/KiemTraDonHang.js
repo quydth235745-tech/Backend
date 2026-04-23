@@ -10,7 +10,7 @@ const xss = require('xss');
  * Middleware that validates and sanitizes input
  */
 exports.validateCreateOrder = (req, res, next) => {
-  const { items, totalPrice, customerName, phone, address, customerEmail, deliveryLocation } = req.body;
+  const { items, totalPrice, customerName, phone, address, customerEmail, couponCode } = req.body;
   
   const errors = [];
 
@@ -74,6 +74,15 @@ exports.validateCreateOrder = (req, res, next) => {
     errors.push('❌ Địa chỉ không được vượt quá 500 ký tự');
   }
 
+  // Validate couponCode (optional)
+  if (couponCode !== undefined && couponCode !== null) {
+    if (typeof couponCode !== 'string') {
+      errors.push('❌ Mã khuyến mãi không hợp lệ');
+    } else if (couponCode.trim().length > 30) {
+      errors.push('❌ Mã khuyến mãi quá dài');
+    }
+  }
+
   // Return errors if any
   if (errors.length > 0) {
     return res.status(400).json({
@@ -88,6 +97,7 @@ exports.validateCreateOrder = (req, res, next) => {
   req.body.customerEmail = xss(customerEmail.trim().toLowerCase());
   req.body.address = xss(address.trim());
   req.body.phone = phone.trim();
+  req.body.couponCode = couponCode ? xss(String(couponCode).trim().toUpperCase()) : '';
 
   next();
 };

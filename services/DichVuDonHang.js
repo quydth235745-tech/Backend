@@ -5,6 +5,7 @@
 
 const Order = require('../models/DonHang');
 const Food = require('../models/MonAn');
+const Coupon = require('../models/KhuyenMai');
 const User = require('../models/TaiKhoan');
 const { sendEmail } = require('../utils/GuiEmail');
 
@@ -87,13 +88,89 @@ exports.calculateDistance = (coord1, coord2) => {
 };
 
 /**
+ * Validate coupon and calculate discount amount
+ * @param {Object} payload - Coupon validation payload
+ * @param {String} payload.code - Coupon code
+ * @param {String} payload.userId - Current user id
+ * @param {Number} payload.orderValue - Order subtotal used to validate coupon conditions
+ * @returns {Promise<Object>} Coupon validation result
+ */
+exports.validateCoupon = async ({ code, userId, orderValue }) => {
+  const normalizedCode = (code || '').trim().toUpperCase();
+  const normalizedOrderValue = Number(orderValue || 0);
+
+  if (!normalizedCode) {
+    throw new Error('Vui lòng nhập mã khuyến mãi');
+  }
+
+  if (!Number.isFinite(normalizedOrderValue) || normalizedOrderValue <= 0) {
+    throw new Error('Giá trị đơn hàng không hợp lệ');
+  }
+
+  const coupon = await Coupon.findOne({ code: normalizedCode });
+  if (!coupon) {
+    throw new Error('Mã khuyến mãi không tồn tại');
+  }
+
+  const now = new Date();
+
+  if (!coupon.isActive) {
+    throw new Error('Mã khuyến mãi đã bị khóa');
+  }
+
+  if (coupon.validFrom && now < coupon.validFrom) {
+    throw new Error('Mã khuyến mãi chưa đến thời gian sử dụng');
+  }
+
+  if (coupon.expiresAt && now > coupon.expiresAt) {
+    throw new Error('Mã khuyến mãi đã hết hạn');
+  }
+
+  if (coupon.usedCount >= coupon.maxUses) {
+    throw new Error('Mã khuyến mãi đã hết lượt sử dụng');
+  }
+
+  if (normalizedOrderValue < Number(coupon.minOrderValue || 0)) {
+    throw new Error(`Đơn hàng tối thiểu ${Number(coupon.minOrderValue || 0).toLocaleString('vi-VN')} VNĐ để dùng mã này`);
+  }
+
+  const userUsedCount = Array.isArray(coupon.usedBy)
+    ? coupon.usedBy.filter((entry) => String(entry.userId) === String(userId)).length
+    : 0;
+
+  if (userUsedCount >= Number(coupon.maxUsesPerUser || 1)) {
+    throw new Error('Bạn đã dùng hết lượt cho mã khuyến mãi này');
+  }
+
+  let discountAmount = 0;
+  if (coupon.discountType === 'percent') {
+    discountAmount = Math.round((normalizedOrderValue * Number(coupon.discountValue || 0)) / 100);
+    if (coupon.maxDiscountAmount && coupon.maxDiscountAmount > 0) {
+      discountAmount = Math.min(discountAmount, Number(coupon.maxDiscountAmount));
+    }
+  } else {
+    discountAmount = Math.round(Number(coupon.discountValue || 0));
+  }
+
+  discountAmount = Math.max(0, Math.min(discountAmount, normalizedOrderValue));
+
+  return {
+    coupon,
+    code: coupon.code,
+    discountAmount,
+    orderValue: normalizedOrderValue,
+    finalOrderValue: Math.max(0, normalizedOrderValue - discountAmount)
+  };
+};
+
+/**
  * Create new order
  * @param {Object} orderData - Order data
  * @param {String} userId - User ID
  * @returns {Promise<Object>} Created order
  */
 exports.createOrder = async (orderData, userId) => {
-  const { items, totalPrice, customerName, customerEmail, phone, address, deliveryLocation } = orderData;
+  const { items, customerName, customerEmail, phone, address, deliveryLocation, couponCode } = orderData;
 
   // Validate and prepare items
   const orderItems = await this.validateOrderItems(items);
@@ -142,11 +219,43 @@ exports.createOrder = async (orderData, userId) => {
   // Store calculated shipping fee
   orderDataToSave.shippingFee = calculatedShippingFee;
 
-  // Calculate final total price = items + shipping
-  orderDataToSave.totalPrice = itemsTotal + calculatedShippingFee;
+  // Store item subtotal for reporting
+  orderDataToSave.itemsTotal = itemsTotal;
+
+  // Apply coupon discount (if any)
+  let appliedCoupon = null;
+  let discountAmount = 0;
+
+  if (couponCode && String(couponCode).trim()) {
+    const couponResult = await this.validateCoupon({
+      code: couponCode,
+      userId,
+      orderValue: itemsTotal
+    });
+
+    appliedCoupon = couponResult.coupon;
+    discountAmount = couponResult.discountAmount;
+    orderDataToSave.couponCode = couponResult.code;
+    orderDataToSave.discountAmount = discountAmount;
+  }
+
+  // Calculate final total price = items + shipping - discount
+  orderDataToSave.totalPrice = Math.max(0, itemsTotal + calculatedShippingFee - discountAmount);
 
   const newOrder = new Order(orderDataToSave);
   const savedOrder = await newOrder.save();
+
+  // Track coupon usage after order is created successfully
+  if (appliedCoupon && discountAmount > 0) {
+    appliedCoupon.usedCount = Number(appliedCoupon.usedCount || 0) + 1;
+    appliedCoupon.usedBy.push({
+      userId,
+      usedAt: new Date(),
+      orderValue: itemsTotal,
+      discountApplied: discountAmount
+    });
+    await appliedCoupon.save();
+  }
 
   // Send confirmation email asynchronously (don't block)
   this.sendOrderConfirmationEmail(savedOrder).catch(err => {

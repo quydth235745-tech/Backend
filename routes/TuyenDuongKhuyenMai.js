@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middlewares/XacThuc');
 const authorize = require('../middlewares/PhanQuyen');
 const Coupon = require('../models/KhuyenMai');
+const orderService = require('../services/DichVuDonHang');
 
 /**
  * GET /api/coupons
@@ -14,6 +15,36 @@ router.get('/', auth, authorize('admin'), async (req, res) => {
     res.json({ success: true, data: coupons });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/coupons/validate
+ * Validate coupon for current user and order value
+ */
+router.post('/validate', auth, async (req, res) => {
+  try {
+    const { code, orderValue } = req.body;
+    const result = await orderService.validateCoupon({
+      code,
+      orderValue,
+      userId: req.user._id
+    });
+
+    res.json({
+      success: true,
+      data: {
+        code: result.code,
+        discountAmount: result.discountAmount,
+        orderValue: result.orderValue,
+        finalOrderValue: result.finalOrderValue
+      }
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Không áp dụng được mã khuyến mãi'
+    });
   }
 });
 

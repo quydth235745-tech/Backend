@@ -20,7 +20,22 @@ const orderSchema = new mongoose.Schema({
     min: 0,
     set: val => parseFloat(val.toFixed(2))
   },
+  itemsTotal: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   shippingFee: { type: Number, default: 0 },
+  discountAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  couponCode: {
+    type: String,
+    trim: true,
+    uppercase: true
+  },
   distance: { 
     type: Number, 
     default: 0,
