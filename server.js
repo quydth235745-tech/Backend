@@ -8,6 +8,7 @@ require('dotenv').config();
 const app = express();
 
 const isProduction = process.env.NODE_ENV === 'production';
+const allowAllDevOrigins = process.env.CORS_DEV_ALLOW_ALL === 'true';
 
 if (!process.env.JWT_SECRET) {
   const message = '❌ Thiếu JWT_SECRET trong Environment Variables.';
@@ -17,11 +18,51 @@ if (!process.env.JWT_SECRET) {
   console.warn(`${message} Các API đăng nhập/xác thực sẽ không hoạt động đúng.`);
 }
 
-// CORS: Dùng whitelist trong production, mở localhost trong development.
-const allowedOrigins = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+// CORS: Dùng whitelist trong production, mở rộng theo biến môi trường để deploy ổn định.
+const parseCsvEnv = (value) =>
+  (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const allowedOrigins = new Set([
+  ...parseCsvEnv(process.env.CORS_ORIGINS), // Backward compatibility
+  ...parseCsvEnv(process.env.FRONTEND_URLS),
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : []),
+]);
+
+const allowVercelPreviews = process.env.CORS_ALLOW_VERCEL_PREVIEWS === 'true';
+const vercelProjectName = (process.env.VERCEL_PROJECT_NAME || '').trim().toLowerCase();
+
+const isAllowedVercelPreview = (origin) => {
+  if (!allowVercelPreviews) {
+    return false;
+  }
+
+  const match = /^https:\/\/([a-z0-9-]+)\.vercel\.app$/i.exec(origin);
+  if (!match) {
+    return false;
+  }
+
+  if (!vercelProjectName) {
+    return true;
+  }
+
+  const subdomain = match[1].toLowerCase();
+  return subdomain === vercelProjectName || subdomain.startsWith(`${vercelProjectName}-`);
+};
+
+const isOriginAllowed = (origin) => {
+  if (allowedOrigins.has(origin)) {
+    return true;
+  }
+
+  if (isAllowedVercelPreview(origin)) {
+    return true;
+  }
+
+  return false;
+};
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -29,15 +70,15 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    if (!isProduction) {
+    if (!isProduction || allowAllDevOrigins) {
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
+    if (isOriginAllowed(origin)) {
       return callback(null, true);
     }
 
-    return callback(new Error('Not allowed by CORS'));
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
