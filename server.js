@@ -7,31 +7,60 @@ require('dotenv').config();
 
 const app = express();
 
-// CORS: Mở toàn bộ origin theo yêu cầu
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (!process.env.JWT_SECRET) {
+  const message = '❌ Thiếu JWT_SECRET trong Environment Variables.';
+  if (isProduction) {
+    throw new Error(message);
+  }
+  console.warn(`${message} Các API đăng nhập/xác thực sẽ không hoạt động đúng.`);
+}
+
+// CORS: Dùng whitelist trong production, mở localhost trong development.
+const allowedOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const corsOptions = {
-  origin: '*',
+  origin: (origin, callback) => {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (!isProduction) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
 
 // Helmet: Đặt các HTTP headers cho security (disabled for development)
-if (process.env.NODE_ENV === 'production') {
+if (isProduction) {
   app.use(helmet());
 }
 
-// Rate Limiting: Tránh brute force attacks (DISABLED FOR DEVELOPMENT)
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 1000,
-//   message: 'Too many requests from this IP, please try again later.',
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
+// Rate Limiting: Tránh brute force/spam requests.
+const limiter = rateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || (isProduction ? 300 : 2000),
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Apply rate limiter to all /api/ routes (DISABLED)
-// app.use('/api/', limiter);
+app.use('/api/', limiter);
 
 // Body Parser: Nhận dữ liệu
 app.use(express.json({ limit: '10mb' }));
@@ -46,7 +75,7 @@ const sanitizeData = (data) => {
     const sanitized = {};
     for (const key in data) {
       if (key.startsWith('$') || key.includes('.')) {
-        console.warn(`⚠️ Blocked suspicious key: ${key}`);
+        console.warn(`⚠️ Khóa đáng ngờ đã bị chặn: ${key}`);
         continue;
       }
       sanitized[key] = sanitizeData(data[key]);

@@ -2,8 +2,23 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs'); 
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const auth = require('../middlewares/XacThuc');
 const User = require('../models/TaiKhoan'); // Gọi khuôn Người dùng ra
+
+const googleClient = new OAuth2Client();
+
+const signAccessToken = (user) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET chưa được cấu hình.');
+  }
+
+  return jwt.sign(
+    { _id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '1d' }
+  );
+};
 
 // API ĐĂNG KÝ TÀI KHOẢN
 router.post('/register', async (req, res) => {
@@ -23,7 +38,7 @@ router.post('/register', async (req, res) => {
       name: req.body.name,
       email: req.body.email,
       password: hashedPassword, // Lưu mật khẩu đã mã hóa, không lưu mật khẩu gốc
-      role: req.body.role || 'user' // Mặc định ai đăng ký cũng là 'user'
+      role: 'user'
     });
 
     const savedUser = await newUser.save();
@@ -68,11 +83,7 @@ router.post('/login', async (req, res) => {
     }
 
     // 3. Mật khẩu đúng -> Cấp "thẻ VIP" (Token)
-    const token = jwt.sign(
-      { _id: user._id, role: user.role }, 
-      process.env.JWT_SECRET, // Dùng chìa khóa bí mật trong file .env để ký tên
-      { expiresIn: '1d' }     // Thẻ này có hạn sử dụng 1 ngày
-    );
+    const token = signAccessToken(user);
 
     // Trả thẻ VIP và thông tin user về cho frontend
     res.json({
@@ -160,15 +171,28 @@ router.post('/google-login', async (req, res) => {
       return res.status(400).json({ message: 'Google token không được cung cấp.' });
     }
 
-    // Giải mã token Google
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map((c) => {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    
-    const data = JSON.parse(jsonPayload);
-    const { email, name } = data;
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(500).json({
+        message: 'Thiếu GOOGLE_CLIENT_ID trong Environment Variables.'
+      });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    if (!payload || !payload.email) {
+      return res.status(400).json({ message: 'Google token không hợp lệ.' });
+    }
+
+    if (!payload.email_verified) {
+      return res.status(400).json({ message: 'Email Google chưa được xác thực.' });
+    }
+
+    const email = payload.email.toLowerCase();
+    const name = payload.name || email.split('@')[0];
 
     if (!email) {
       return res.status(400).json({ message: 'Email không tìm thấy trong Google token.' });
@@ -192,11 +216,7 @@ router.post('/google-login', async (req, res) => {
     }
 
     // Cấp JWT token của app
-    const appToken = jwt.sign(
-      { _id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
+    const appToken = signAccessToken(user);
 
     res.json({
       message: 'Đăng nhập bằng Google thành công!',
@@ -209,7 +229,7 @@ router.post('/google-login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ message: 'Lỗi OAuth: ' + err.message });
+    res.status(401).json({ message: 'Google token không hợp lệ hoặc đã hết hạn.' });
   }
 });
 
