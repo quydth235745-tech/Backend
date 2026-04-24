@@ -8,6 +8,26 @@ const User = require('../models/TaiKhoan'); // Gọi khuôn Người dùng ra
 
 const googleClient = new OAuth2Client();
 
+const parseGoogleAudiences = () => {
+  const audienceSet = new Set();
+
+  const singleClientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+  if (singleClientId) {
+    audienceSet.add(singleClientId);
+  }
+
+  const csvClientIds = (process.env.GOOGLE_CLIENT_IDS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  for (const clientId of csvClientIds) {
+    audienceSet.add(clientId);
+  }
+
+  return Array.from(audienceSet);
+};
+
 const signAccessToken = (user) => {
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET chưa được cấu hình.');
@@ -171,16 +191,32 @@ router.post('/google-login', async (req, res) => {
       return res.status(400).json({ message: 'Google token không được cung cấp.' });
     }
 
-    if (!process.env.GOOGLE_CLIENT_ID) {
+    const audiences = parseGoogleAudiences();
+    if (!audiences.length) {
       return res.status(500).json({
-        message: 'Thiếu GOOGLE_CLIENT_ID trong Environment Variables.'
+        message: 'Thiếu GOOGLE_CLIENT_ID (hoặc GOOGLE_CLIENT_IDS) trong Environment Variables.'
       });
     }
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    let ticket = null;
+    let verifyError = null;
+
+    for (const audience of audiences) {
+      try {
+        ticket = await googleClient.verifyIdToken({
+          idToken: token,
+          audience,
+        });
+        break;
+      } catch (err) {
+        verifyError = err;
+      }
+    }
+
+    if (!ticket) {
+      throw verifyError || new Error('Google token verification failed.');
+    }
+
     const payload = ticket.getPayload();
 
     if (!payload || !payload.email) {
@@ -229,7 +265,9 @@ router.post('/google-login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(401).json({ message: 'Google token không hợp lệ hoặc đã hết hạn.' });
+    res.status(401).json({
+      message: 'Google token không hợp lệ, hết hạn, hoặc không khớp Google Client ID cấu hình.'
+    });
   }
 });
 
