@@ -8,7 +8,7 @@ const User = require('../models/TaiKhoan'); // Gọi khuôn Người dùng ra
 
 const googleClient = new OAuth2Client();
 
-const parseGoogleAudiences = () => {
+const parseGoogleAudiences = (requestClientId = '') => {
   const audienceSet = new Set();
 
   const singleClientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
@@ -23,6 +23,11 @@ const parseGoogleAudiences = () => {
 
   for (const clientId of csvClientIds) {
     audienceSet.add(clientId);
+  }
+
+  const requestAudience = String(requestClientId || '').trim();
+  if (requestAudience) {
+    audienceSet.add(requestAudience);
   }
 
   return Array.from(audienceSet);
@@ -186,15 +191,15 @@ router.get('/verify-token', auth, async (req, res) => {
 // API ĐĂNG NHẬP BẰNG GOOGLE OAUTH
 router.post('/google-login', async (req, res) => {
   try {
-    const { token } = req.body;
+    const { token, clientId } = req.body;
     if (!token) {
       return res.status(400).json({ message: 'Google token không được cung cấp.' });
     }
 
-    const audiences = parseGoogleAudiences();
+    const audiences = parseGoogleAudiences(clientId);
     if (!audiences.length) {
-      return res.status(500).json({
-        message: 'Thiếu GOOGLE_CLIENT_ID (hoặc GOOGLE_CLIENT_IDS) trong Environment Variables.'
+      return res.status(400).json({
+        message: 'Thiếu Google Client ID. Hãy cấu hình GOOGLE_CLIENT_ID ở backend hoặc gửi clientId từ frontend.'
       });
     }
 
